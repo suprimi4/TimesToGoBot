@@ -3,6 +3,7 @@ package suprimi4.timetogobot.dto;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.time.LocalDate;
 import java.time.LocalTime;
 
 @Getter
@@ -12,6 +13,7 @@ public class UserData {
     private String homeAddress;
     private String workAddress;
     private LocalTime arriveTime;
+    private LocalDate lastNotificationDate;
 
     @Override
     public String toString() {

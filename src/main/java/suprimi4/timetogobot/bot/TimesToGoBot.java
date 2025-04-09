@@ -85,15 +85,15 @@ public class TimesToGoBot extends TelegramLongPollingBot {
     }
 
     private void handleWorkAddress(Long chatId, String message, UserData currentUser) {
-    try {
-        geocodeClient.resolveWorkAddress(chatId,message);
-        currentUser.setWorkAddress(message);
-        userData.put(chatId, currentUser);
-        sendMessage(chatId, "Введи время, когда нужно быть на работе (например, 09:00):");
-        messageState.put(chatId, MessageState.WAITING_WORK_TIME);
-    } catch (Exception e) {
-        sendMessage(chatId, "Не удалось распознать адрес. Пожалуйста, введите адрес проживания еще раз:");
-    }
+        try {
+            geocodeClient.resolveWorkAddress(chatId, message);
+            currentUser.setWorkAddress(message);
+            userData.put(chatId, currentUser);
+            sendMessage(chatId, "Введи время, когда нужно быть на работе (например, 09:00):");
+            messageState.put(chatId, MessageState.WAITING_WORK_TIME);
+        } catch (Exception e) {
+            sendMessage(chatId, "Не удалось распознать адрес. Пожалуйста, введите адрес проживания еще раз:");
+        }
 
     }
 
@@ -101,6 +101,7 @@ public class TimesToGoBot extends TelegramLongPollingBot {
         try {
             LocalTime workTime = LocalTime.parse(message, DateTimeFormatter.ofPattern("HH:mm"));
             currentUser.setArriveTime(workTime);
+            currentUser.setLastNotificationDate(null);
             userData.put(chatId, currentUser);
 
             UserInfoDTO userInfo = geocodeClient.getUserInfo(chatId);
@@ -133,7 +134,14 @@ public class TimesToGoBot extends TelegramLongPollingBot {
                 ZoneId userZone = ZoneId.of(userInfo.getTimezone());
                 ZonedDateTime nowInUserZone = ZonedDateTime.now(userZone);
 
-                if (nowInUserZone.getDayOfWeek() == DayOfWeek.SATURDAY || nowInUserZone.getDayOfWeek() == DayOfWeek.SUNDAY) {
+                if (nowInUserZone.getDayOfWeek() == DayOfWeek.SATURDAY
+                        || nowInUserZone.getDayOfWeek() == DayOfWeek.SUNDAY) {
+                    return;
+                }
+
+                LocalDate userDay = nowInUserZone.toLocalDate();
+                if (userData.getLastNotificationDate() != null
+                        && userData.getLastNotificationDate().equals(userDay)) {
                     return;
                 }
 
@@ -142,8 +150,7 @@ public class TimesToGoBot extends TelegramLongPollingBot {
                 LocalTime departureTime = arriveTime.minusSeconds((long) durationSeconds);
                 LocalTime notificationTime = departureTime.minusMinutes(30);
                 LocalTime currentTime = nowInUserZone.toLocalTime();
-
-                if (Math.abs(currentTime.until(notificationTime, ChronoUnit.MINUTES)) <= 1) {
+                if (currentTime.isAfter(notificationTime) && currentTime.isBefore(departureTime)) {
                     String message = String.format("""
                                     Напоминание о выезде!
                                     Чтобы приехать к %s,
@@ -152,6 +159,7 @@ public class TimesToGoBot extends TelegramLongPollingBot {
                             departureTime.format(DateTimeFormatter.ofPattern("HH:mm"))
                     );
                     sendMessage(chatId, message);
+                    userData.setLastNotificationDate(userDay);
                 }
             }
         });
@@ -174,7 +182,12 @@ public class TimesToGoBot extends TelegramLongPollingBot {
                     Время прибытия: %s
                     Часовой пояс: %s
                     
-                    Текущее время в вашем поясе: %s""", userInfo.getHomeAddress(), userInfo.getWorkAddress(), localData.getArriveTime().format(DateTimeFormatter.ofPattern("HH:mm")), userInfo.getTimezone(), ZonedDateTime.now(ZoneId.of(userInfo.getTimezone())).format(DateTimeFormatter.ofPattern("HH:mm dd.MM.yyyy")));
+                    Текущее время в вашем поясе: %s""",
+                    userInfo.getHomeAddress(),
+                    userInfo.getWorkAddress(),
+                    localData.getArriveTime().format(DateTimeFormatter.ofPattern("HH:mm")),
+                    userInfo.getTimezone(),
+                    ZonedDateTime.now(ZoneId.of(userInfo.getTimezone())).format(DateTimeFormatter.ofPattern("HH:mm dd.MM.yyyy")));
 
             sendMessage(chatId, info);
         } else {
